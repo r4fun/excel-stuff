@@ -20,6 +20,7 @@ data_with_subtotal <- function(workbook, data, sheet.name){
     }
     return(index)
   }
+
   
   # Excel aggregate function list
   function_table <-
@@ -37,13 +38,21 @@ data_with_subtotal <- function(workbook, data, sheet.name){
                      "VAR",
                      "VARP"
       )
-    )
+    )  
+    
+  if(attr(wb, "Class") %>% is.null){
+    # Number of sheet with subtotals
+    sheet.counts <- 1
+    # Set up function list
+    addWorksheet(wb, "function.list", visible = FALSE)
+    writeDataTable(wb, "function.list", function_table)
+  } else {
+    # Number of sheet with subtotals
+    sheet.counts <- as.integer((attr(wb, "Class"))[2]) + 1
+  }
   
-  # Set up function list
-  addWorksheet(wb, "function.list", visible = FALSE)
-  writeDataTable(wb, "function.list", function_table)
   addWorksheet(wb, sheet.name)
-  table.name <- "data"
+  table.name <- glue("data{sheet.counts}")
   writeDataTable(wb, sheet.name, data, tableName = table.name, stack = TRUE)
   
   # Detect last row and last column
@@ -53,7 +62,8 @@ data_with_subtotal <- function(workbook, data, sheet.name){
   for (i in 1:ncol(data)) {
     writeFormula(wb,
                  sheet.name,
-                 glue("=SUBTOTAL(function.list!$C2,data[{names(data)[i]}])"),
+                 glue("=SUBTOTAL(function.list!$C{sheet.counts + 1},",
+                      "{table.name}[{names(data)[i]}])"),
                  i,
                  last.row)
   }
@@ -71,32 +81,21 @@ data_with_subtotal <- function(workbook, data, sheet.name){
     value =
       glue("'function.list'!$B$2:$B${nrow(function_table) + 1}")
   )
+  
   writeData(wb, "function.list", "Detected Function", 3, 1)
   writeFormula(
     wb,
     "function.list",
     glue("=INDEX(function.list!$A$2:$A{nrow(function_table) + 1}, ", 
-    "MATCH(data!${excel_col_num(last.col)}${last.row}, ",
+    "MATCH({sheet.name}!${excel_col_num(last.col)}${last.row}, ",
     "function.list!$B$2:$B{nrow(function_table) + 1}, 1))"),
     3,
-    2
+    sheet.counts + 1
   )
-  setColWidths(wb, sheet.name, cols = 1:ncol(data), widths = "auto")
+  setColWidths(wb, sheet.name, cols = 1:ncol(data), widths = 20)
+  
+  #Set attribute
+  wb <<-
+    wb %>%
+    structure(., "Class" = c("subtotal", sheet.counts))
 }
-
-#-------------------------------------------------------------------------------
-# Example
-#-------------------------------------------------------------------------------
-
-wb <- createWorkbook()
-set.seed(1024)
-
-# Function allows one to add data table to existing workbook.
-data_with_subtotal(
-  workbook = wb,
-  data = sample_n(iris, 20,  replace = FALSE),
-  sheet.name = "data"
-)
-
-# Save workbook
-saveWorkbook(wb, "output/subtotal irist sample.xlsx", overwrite = TRUE)
